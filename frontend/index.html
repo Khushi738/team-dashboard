@@ -515,7 +515,7 @@ async function init() {
   setLoader(true,'Connecting to backend…');
   try {
     // check API health
-    const health = await fetch(API_BASE + '/').then(r=>r.json()).catch(()=>null);
+    const health = await fetch(API_BASE + '/api/health').then(r=>r.json()).catch(()=>null);
     if (health) {
       document.getElementById('api-dot').classList.add('on');
       document.getElementById('api-txt').textContent = 'API Online';
