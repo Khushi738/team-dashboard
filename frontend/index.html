@@ -525,8 +525,9 @@ async function init() {
   // restore session
   if (token) {
     try {
-      await api('/api/auth/verify');
-      setAdminUI(true);
+      const v = await api('/api/auth/verify');
+      const role = (v.user && v.user.role) ? v.user.role : 'admin';
+      if (role === 'admin') setAdminUI(true);
     } catch { logout(false); }
   }
 
@@ -580,15 +581,15 @@ async function doLogin() {
       body: JSON.stringify({emp_id, password})
     });
     token = data.token;
-    adminInfo = data.admin;
     localStorage.setItem('td_token', token);
+    adminInfo = { emp_id: data.emp_id, emp_name: data.emp_name };
     localStorage.setItem('td_admin', JSON.stringify(adminInfo));
     setAdminUI(true);
     document.getElementById('login-overlay').classList.remove('open');
     document.getElementById('login-empid').value = '';
     document.getElementById('login-pw').value = '';
-    await loadEmployees(); // reload with admin controls
-    toast(`✅ Welcome, ${adminInfo.emp_name}!`, 'ok');
+    await loadEmployees();
+    toast(`✅ Welcome, ${data.emp_name}!`, 'ok');
   } catch(e) {
     err.textContent = e.message;
     err.style.display = 'block';
