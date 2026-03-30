@@ -359,9 +359,9 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
     <div class="sb-section">
       <div class="sb-label">Caliber Tier</div>
       <button class="sb-item" onclick="filterTier('S',this)">🏆 S-Tier (95+)</button>
-      <button class="sb-item" onclick="filterTier('A',this)">🥇 A-Tier (85–94)</button>
-      <button class="sb-item" onclick="filterTier('B',this)">🥈 B-Tier (70–84)</button>
-      <button class="sb-item" onclick="filterTier('C',this)">🥉 C-Tier (&lt;60)</button>
+      <button class="sb-item" onclick="filterTier('A',this)">🥇 A-Tier (75+)</button>
+      <button class="sb-item" onclick="filterTier('B',this)">🥈 B-Tier (50–74)</button>
+      <button class="sb-item" onclick="filterTier('C',this)">🥉 C-Tier (hidden)</button>
     </div>
 
     <div class="sb-divider"></div>
@@ -621,7 +621,7 @@ function avgScore(emp) {
 }
 
 function tier(score) {
-  return score >= 95 ? 'S' : score >= 85 ? 'A' : score >= 70 ? 'B' : 'C';
+  return score >= 95 ? 'S' : score >= 75 ? 'A' : score >= 50 ? 'B' : 'C';
 }
 
 function tierColor(t) { return {S:'#f59e0b',A:'#3b82f6',B:'#22c55e',C:'#94a3b8'}[t] || '#888'; }
