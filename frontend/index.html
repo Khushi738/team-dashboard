@@ -258,10 +258,6 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
   .members-grid,.radar-grid{grid-template-columns:1fr}
 }
 @media(max-width:420px){.stats-bar{grid-template-columns:1fr 1fr;gap:8px}.stat-num{font-size:22px}}
-
-.btn-danger{background:var(--danger)!important;color:#fff!important;border-color:var(--danger)!important}
-.btn-danger:hover{opacity:0.88}
-.employee-only{display:none}
 </style>
 </head>
 <body>
@@ -285,8 +281,6 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
     <button class="nav-btn" onclick="gotoView('org',this)">🏢 Org Chart</button>
     <button class="nav-btn" onclick="gotoView('radar',this)">🎯 Radar</button>
     <button class="nav-btn admin-only" id="admin-nav-tab" onclick="gotoView('admin',this)" style="display:none">🔐 Admin</button>
-    <button class="nav-btn admin-only" id="approval-nav-tab" onclick="gotoView('approvals',this)" style="display:none">✅ Approvals <span id="approval-badge" style="background:#ef4444;color:#fff;border-radius:99px;font-size:10px;padding:1px 6px;margin-left:4px;display:none">0</span></button>
-    <button class="nav-btn employee-only" id="requests-nav-tab" onclick="gotoView('myrequests',this)" style="display:none">📋 My Requests</button>
   </div>
   <div class="nav-right">
     <div class="search-wrap">
@@ -364,9 +358,9 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
 
     <div class="sb-section">
       <div class="sb-label">Caliber Tier</div>
-      <button class="sb-item" onclick="filterTier('S',this)">🏆 S-Tier (95+)</button>
-      <button class="sb-item" onclick="filterTier('A',this)">🥇 A-Tier (80+)</button>
-      <button class="sb-item" onclick="filterTier('B',this)">🥈 B-Tier (60–79)</button>
+      <button class="sb-item" onclick="filterTier('S',this)">🏆 S-Tier (90+)</button>
+      <button class="sb-item" onclick="filterTier('A',this)">🥇 A-Tier (75–89)</button>
+      <button class="sb-item" onclick="filterTier('B',this)">🥈 B-Tier (60–74)</button>
       <button class="sb-item" onclick="filterTier('C',this)">🥉 C-Tier (&lt;60)</button>
     </div>
 
@@ -485,23 +479,27 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
 <div class="toast" id="toast"></div>
 
 <script>
+// ── CONFIG ────────────────────────────────────────────────
+// Change this to your backend URL. When backend & frontend are
+// on the same host (e.g. Railway), leave as empty string.
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5000'
-  : '';
+  ? 'http://localhost:5000'   // local backend port
+  : '';                        // same origin in production
 
+// ── CONSTANTS ─────────────────────────────────────────────
 const AREAS = ['Development','Data Analytics','Design','Consultancy','Documentation'];
+// functional_area_id from DB seed (1..5 in order)
 const AREA_ID = {Development:1,'Data Analytics':2,Design:3,Consultancy:4,Documentation:5};
 const AREA_COLORS = {Development:'#1B4332','Data Analytics':'#6A0572',Design:'#B5451B',Consultancy:'#4A4A4A',Documentation:'#023E8A'};
 
-let employees   = [];
-let token       = localStorage.getItem('td_token') || null;
-let adminInfo   = JSON.parse(localStorage.getItem('td_admin') || 'null');
-let userInfo    = JSON.parse(localStorage.getItem('td_user') || 'null');
-let isAdmin     = false;
-let isEmployee  = false;
-let currentRole = localStorage.getItem('td_role') || null;
-let filter      = {area:'all', sort:'name', tier:null, search:''};
+// ── STATE ─────────────────────────────────────────────────
+let employees = [];       // raw from API
+let token     = localStorage.getItem('td_token') || null;
+let adminInfo = JSON.parse(localStorage.getItem('td_admin') || 'null');
+let isAdmin   = false;
+let filter    = {area:'all', sort:'name', tier:null, search:''};
 
+// ── API HELPER ────────────────────────────────────────────
 async function api(path, opts = {}) {
   const headers = {'Content-Type':'application/json'};
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -512,25 +510,23 @@ async function api(path, opts = {}) {
   return data;
 }
 
+// ── INIT ──────────────────────────────────────────────────
 async function init() {
   setLoader(true,'Connecting to backend…');
   try {
-    const health = await fetch(API_BASE + '/').then(r=>r.json()).catch(()=>null);
+    // check API health
+    const health = await fetch(API_BASE + '/api/health').then(r=>r.json()).catch(()=>null);
     if (health) {
       document.getElementById('api-dot').classList.add('on');
       document.getElementById('api-txt').textContent = 'API Online';
     }
   } catch {}
 
+  // restore session
   if (token) {
     try {
-      const v = await api('/api/auth/verify');
-      const role = v.user?.role || currentRole;
-      if (role === 'admin') {
-        setAdminUI(true);
-      } else if (role === 'employee') {
-        setEmployeeUI(v.user);
-      }
+      await api('/api/auth/verify');
+      setAdminUI(true);
     } catch { logout(false); }
   }
 
@@ -559,6 +555,7 @@ async function loadTeamStats() {
   } catch {}
 }
 
+// ── AUTH ──────────────────────────────────────────────────
 function handleAuthClick() {
   if (isAdmin) logout();
   else openLogin();
@@ -576,38 +573,22 @@ async function doLogin() {
   const btn      = document.getElementById('login-btn');
   err.style.display = 'none';
   if (!emp_id || !password) { err.textContent='Employee ID and password are required.'; err.style.display='block'; return; }
-  btn.innerHTML = "<span class='spinner'></span> Logging in\u2026"; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Logging in…'; btn.disabled = true;
   try {
     const data = await api('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({emp_id, password})
     });
     token = data.token;
+    adminInfo = data.admin;
     localStorage.setItem('td_token', token);
-    localStorage.setItem('td_role', data.role);
-
-    if (data.needsSetup) {
-      document.getElementById('login-overlay').classList.remove('open');
-      openSetPassword(data);
-      return;
-    }
-
-    if (data.role === 'admin') {
-      adminInfo = { emp_id: data.emp_id, emp_name: data.emp_name };
-      localStorage.setItem('td_admin', JSON.stringify(adminInfo));
-      setAdminUI(true);
-      await loadEmployees();
-      toast(`✅ Welcome, ${data.emp_name}!`, 'ok');
-    } else {
-      userInfo = { emp_id: data.emp_id, emp_name: data.emp_name };
-      localStorage.setItem('td_user', JSON.stringify(userInfo));
-      setEmployeeUI(data);
-      await loadEmployees();
-      toast(`✅ Welcome, ${data.emp_name}!`, 'ok');
-    }
+    localStorage.setItem('td_admin', JSON.stringify(adminInfo));
+    setAdminUI(true);
     document.getElementById('login-overlay').classList.remove('open');
     document.getElementById('login-empid').value = '';
     document.getElementById('login-pw').value = '';
+    await loadEmployees(); // reload with admin controls
+    toast(`✅ Welcome, ${adminInfo.emp_name}!`, 'ok');
   } catch(e) {
     err.textContent = e.message;
     err.style.display = 'block';
@@ -616,12 +597,9 @@ async function doLogin() {
 }
 
 function logout(notify=true) {
-  token = null; adminInfo = null; userInfo = null;
-  isAdmin = false; isEmployee = false; currentRole = null;
+  token = null; adminInfo = null; isAdmin = false;
   localStorage.removeItem('td_token');
   localStorage.removeItem('td_admin');
-  localStorage.removeItem('td_user');
-  localStorage.removeItem('td_role');
   setAdminUI(false);
   renderGrid();
   if (notify) toast('Logged out', 'warn');
@@ -629,66 +607,21 @@ function logout(notify=true) {
 
 function setAdminUI(admin) {
   isAdmin = admin;
-  if (admin) isEmployee = false;
   const btn = document.getElementById('auth-btn');
-  btn.textContent = admin ? `👤 ${adminInfo?.emp_name || 'Admin'} — Logout` : (isEmployee ? `👤 ${userInfo?.emp_name || 'Employee'} — Logout` : '🔐 Login');
-  btn.className   = 'auth-btn' + (admin || isEmployee ? ' active' : '');
+  btn.textContent  = admin ? `👤 ${adminInfo?.emp_name || 'Admin'} — Logout` : '🔐 Admin Login';
+  btn.className    = 'auth-btn' + (admin ? ' active' : '');
   document.querySelectorAll('.admin-only').forEach(el => el.style.display = admin ? '' : 'none');
-  document.querySelectorAll('.employee-only').forEach(el => el.style.display = isEmployee ? '' : 'none');
-  const approvalTab = document.getElementById('approval-nav-tab');
-  if (approvalTab) approvalTab.style.display = admin ? '' : 'none';
 }
 
-function setEmployeeUI(data) {
-  isEmployee = true; isAdmin = false;
-  currentRole = 'employee';
-  userInfo = { emp_id: data.emp_id, emp_name: data.emp_name };
-  localStorage.setItem('td_user', JSON.stringify(userInfo));
-  localStorage.setItem('td_role', 'employee');
-  const btn = document.getElementById('auth-btn');
-  btn.textContent = `👤 ${data.emp_name} — Logout`;
-  btn.className   = 'auth-btn active';
-  document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
-  document.querySelectorAll('.employee-only').forEach(el => el.style.display = '');
-}
-
-function openSetPassword(data) {
-  document.getElementById('setpw-name').textContent = data.emp_name;
-  document.getElementById('setpw-overlay').classList.add('open');
-}
-
-async function doSetPassword() {
-  const pw  = document.getElementById('setpw-pw').value;
-  const pw2 = document.getElementById('setpw-pw2').value;
-  const err = document.getElementById('setpw-err');
-  const btn = document.getElementById('setpw-btn');
-  err.style.display = 'none';
-  if (pw.length < 6) { err.textContent='Password must be at least 6 characters.'; err.style.display='block'; return; }
-  if (pw !== pw2)    { err.textContent='Passwords do not match.'; err.style.display='block'; return; }
-  btn.disabled = true; btn.textContent = 'Setting…';
-  try {
-    const data = await api('/api/auth/set-password', { method:'POST', body: JSON.stringify({password: pw}) });
-    token = data.token;
-    localStorage.setItem('td_token', token);
-    document.getElementById('setpw-overlay').classList.remove('open');
-    const v = await api('/api/auth/verify');
-    setEmployeeUI(v.user);
-    await loadEmployees();
-    toast('✅ Password set! Welcome.', 'ok');
-  } catch(e) {
-    err.textContent = e.message; err.style.display='block';
-  }
-  btn.disabled = false; btn.textContent = 'Set Password';
-}
-
+// ── DATA HELPERS ──────────────────────────────────────────
 function avgScore(emp) {
   if (!emp.areas || !emp.areas.length) return 0;
   const total = emp.areas.reduce((s, a) => s + parseFloat(a.rating), 0);
-  return Math.round((total / emp.areas.length) * 10);
+  return Math.round((total / emp.areas.length) * 10); // 0-10 → 0-100
 }
 
 function tier(score) {
-  return score >= 95 ? 'S' : score >= 85 ? 'A' : score >= 70 ? 'B' : 'C';
+  return score >= 90 ? 'S' : score >= 75 ? 'A' : score >= 60 ? 'B' : 'C';
 }
 
 function tierColor(t) { return {S:'#f59e0b',A:'#3b82f6',B:'#22c55e',C:'#94a3b8'}[t] || '#888'; }
@@ -700,7 +633,7 @@ function primaryColor(emp) {
 
 function initials(name) { return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
 
-function ratingPct(r) { return Math.round(parseFloat(r) * 10); }
+function ratingPct(r) { return Math.round(parseFloat(r) * 10); } // 0-10 → 0-100%
 
 function getFiltered() {
   let list = employees.map(e => ({...e, _score: avgScore(e), _tier: tier(avgScore(e))}));
@@ -718,7 +651,7 @@ function getFiltered() {
   if (filter.sort === 'name')     list.sort((a,b) => a.emp_name.localeCompare(b.emp_name));
   if (filter.sort === 'score')    list.sort((a,b) => b._score - a._score);
   if (filter.sort === 'projects') list.sort((a,b) => b.projects_completed - a.projects_completed);
-  if (filter.sort === 'exp')      list.sort((a,b) => { if(a.years_of_exp===0 && b.years_of_exp>0) return 1; if(b.years_of_exp===0 && a.years_of_exp>0) return -1; return b.years_of_exp - a.years_of_exp; });
+  if (filter.sort === 'exp')      list.sort((a,b) => b.years_of_exp - a.years_of_exp);
   return list;
 }
 
@@ -740,11 +673,13 @@ function renderStats() {
   document.getElementById('s-stier').textContent = list.filter(e=>e._tier==='S').length;
 }
 
+// ── RADAR DRAW ────────────────────────────────────────────
 function drawRadar(canvas, scores, color, size, showLabels=false) {
   const ctx = canvas.getContext('2d');
   canvas.width = size; canvas.height = size;
   const cx = size/2, cy = size/2, r = size * 0.35, n = scores.length;
   ctx.clearRect(0,0,size,size);
+  // grid rings
   for (let g=1; g<=4; g++) {
     ctx.beginPath();
     for (let i=0; i<n; i++) {
@@ -755,6 +690,7 @@ function drawRadar(canvas, scores, color, size, showLabels=false) {
     }
     ctx.closePath(); ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.lineWidth=1; ctx.stroke();
   }
+  // axes
   for (let i=0; i<n; i++) {
     const a = (i/n)*Math.PI*2 - Math.PI/2;
     ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
@@ -764,6 +700,7 @@ function drawRadar(canvas, scores, color, size, showLabels=false) {
       ctx.fillText(AREAS[i].split(' ')[0], cx+Math.cos(a)*(r+16), cy+Math.sin(a)*(r+16));
     }
   }
+  // data shape
   ctx.beginPath();
   for (let i=0; i<n; i++) {
     const a = (i/n)*Math.PI*2 - Math.PI/2;
@@ -774,6 +711,7 @@ function drawRadar(canvas, scores, color, size, showLabels=false) {
   ctx.closePath();
   ctx.fillStyle = color+'2e'; ctx.fill();
   ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  // dots
   for (let i=0; i<n; i++) {
     const a = (i/n)*Math.PI*2 - Math.PI/2, v = scores[i]/100;
     const x = cx+Math.cos(a)*r*v, y = cy+Math.sin(a)*r*v;
@@ -782,12 +720,14 @@ function drawRadar(canvas, scores, color, size, showLabels=false) {
 }
 
 function getScores(emp) {
+  // map areas to fixed order by name, default 0 if missing
   return AREAS.map(name => {
     const a = emp.areas?.find(x => x.area_name === name);
     return a ? ratingPct(a.rating) : 0;
   });
 }
 
+// ── RENDER GRID ───────────────────────────────────────────
 function renderGrid() {
   const filtered = getFiltered();
   const grid  = document.getElementById('members-grid');
@@ -835,6 +775,7 @@ function renderGrid() {
   }, 50);
 }
 
+// ── ORG CHART ─────────────────────────────────────────────
 function renderOrg() {
   const areas = AREAS;
   document.getElementById('org-tree').innerHTML = `
@@ -842,7 +783,7 @@ function renderOrg() {
     <div class="vline"></div>
     <div class="org-depts">
       ${areas.map(area => {
-        const members = employees.filter(e => e.areas?.some(a => a.area_name === area && parseFloat(a.rating) >= 5));
+        const members = employees.filter(e => e.areas?.some(a => a.area_name === area));
         return `
         <div class="dept-col">
           <div class="dept-vline"></div>
@@ -856,6 +797,7 @@ function renderOrg() {
     </div>`;
 }
 
+// ── RADAR GRID VIEW ───────────────────────────────────────
 function renderRadar() {
   const filtered = getFiltered();
   document.getElementById('radar-count').textContent = `${filtered.length} employees`;
@@ -881,6 +823,7 @@ function renderRadar() {
   }, 50);
 }
 
+// ── DETAIL MODAL ──────────────────────────────────────────
 function openDetail(empId) {
   const e     = employees.find(x=>x.emp_id===empId); if (!e) return;
   const score = avgScore(e), t = tier(score), color = primaryColor(e);
@@ -954,6 +897,7 @@ function switchTab(btn, panelId) {
   document.getElementById(panelId).classList.add('active');
 }
 
+// ── ADD / EDIT FORM ───────────────────────────────────────
 function openAddModal() { buildForm(null); }
 function openEditModal(empId) {
   const e = employees.find(x=>x.emp_id===empId);
@@ -1036,7 +980,7 @@ async function submitForm(empId) {
   }
 
   const btn = document.getElementById('form-submit');
-  btn.innerHTML = "<span class='spinner'></span> Saving\u2026"; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving…'; btn.disabled = true;
   try {
     const payload = {emp_name, designation, graduation_deg, years_of_exp, projects_completed, areas};
     if (!isEdit) payload.emp_id = emp_id;
@@ -1061,6 +1005,7 @@ async function deleteEmp(empId, name) {
   } catch(e) { toast(e.message, 'err'); }
 }
 
+// ── TEAM STATS ────────────────────────────────────────────
 async function patchProjects(action) {
   try {
     const data = await api('/api/team-stats/projects-completed', {method:'PATCH', body:JSON.stringify({action})});
@@ -1069,12 +1014,11 @@ async function patchProjects(action) {
   } catch(e) { toast(e.message, 'err'); }
 }
 
+// ── CONTROLS ──────────────────────────────────────────────
 function gotoView(v, btn) {
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   document.getElementById(`view-${v}`).classList.add('active');
   if (btn) { document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
-  if (v==='approvals') loadApprovals();
-  if (v==='myrequests') loadMyRequests();
   if (v==='org')   renderOrg();
   if (v==='radar') renderRadar();
 }
@@ -1130,305 +1074,8 @@ document.addEventListener('keydown', e=>{
   }
 });
 
+// ── BOOT ──────────────────────────────────────────────────
 init();
-
-const _origRenderGrid = renderGrid;
-function renderGridWithRole() {
-  if (isEmployee && userInfo) {
-    const myEmp = employees.find(e => e.emp_id === userInfo.emp_id);
-    const grid = document.getElementById('emp-grid');
-    if (!grid) return;
-    if (!myEmp) {
-      grid.innerHTML = '<p style="color:var(--muted);padding:32px">Your profile is not set up yet. Ask Shivam to add you.</p>';
-      return;
-    }
-    const score = avgScore(myEmp);
-    const t = tier(score);
-    grid.innerHTML = `
-      <div style="max-width:520px">
-        ${buildCard(myEmp, score, t, false)}
-        <div style="margin-top:16px;display:flex;gap:10px">
-          <button class="btn btn-primary" onclick="openRequestModal(${myEmp.emp_id})" style="flex:1;justify-content:center">📝 Request Update</button>
-          <button class="btn btn-ghost" onclick="gotoView('myrequests',null)" style="flex:1;justify-content:center">📋 View My Requests</button>
-        </div>
-      </div>`;
-    renderStats();
-  } else {
-    _origRenderGrid();
-  }
-}
-
-window.addEventListener('DOMContentLoaded', () => {});
-
-function openRequestModal(empId) {
-  const e = employees.find(x => x.emp_id === empId);
-  if (!e) return;
-  const areas = [
-    {id:1,name:'Development'},{id:2,name:'Data Analytics'},
-    {id:3,name:'Design'},{id:4,name:'Consultancy'},{id:5,name:'Documentation'}
-  ];
-  const getRating = (areaId) => {
-    const found = e.areas?.find(a => a.functional_area_id === areaId);
-    return found ? found.rating : 0;
-  };
-  const overlay = document.getElementById('request-overlay');
-  if (!overlay) {
-    const div = document.createElement('div');
-    div.id = 'request-overlay';
-    div.className = 'overlay';
-    div.innerHTML = `<div class="modal" style="max-width:480px">
-      <div class="modal-header">
-        <span class="modal-title">📝 Request Profile Update</span>
-        <button class="modal-close" onclick="document.getElementById('request-overlay').classList.remove('open')">✕</button>
-      </div>
-      <div style="padding:20px" id="request-form-body"></div>
-    </div>`;
-    document.body.appendChild(div);
-  }
-  document.getElementById('request-form-body').innerHTML = `
-    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Changes need Shivam's approval before they take effect.</p>
-    <label class="form-label">What do you want to update?</label>
-    <select class="form-input" id="req-field" onchange="toggleReqField()" style="margin-bottom:12px">
-      <option value="">— Select field —</option>
-      <option value="designation">Designation</option>
-      <option value="years_of_exp">Years of Experience</option>
-      <option value="projects_completed">Projects Completed</option>
-      <option value="graduation_deg">Graduation Degree</option>
-      <option value="area_ratings">Area Ratings</option>
-    </select>
-    <div id="req-single-field" style="display:none">
-      <label class="form-label">Current Value</label>
-      <input class="form-input" id="req-old" disabled style="margin-bottom:8px;opacity:0.6"/>
-      <label class="form-label">New Value</label>
-      <input class="form-input" id="req-new" placeholder="Enter new value" style="margin-bottom:12px"/>
-    </div>
-    <div id="req-ratings-field" style="display:none">
-      ${areas.map(a=>`
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <span style="width:130px;font-size:13px">${a.name}</span>
-          <input type="range" min="0" max="10" step="0.5" value="${getRating(a.id)}" id="req-area-${a.id}" oninput="document.getElementById('req-area-val-${a.id}').textContent=this.value" style="flex:1"/>
-          <span id="req-area-val-${a.id}" style="width:28px;font-size:13px;text-align:right">${getRating(a.id)}</span>
-        </div>`).join('')}
-    </div>
-    <label class="form-label">Note (optional)</label>
-    <input class="form-input" id="req-note" placeholder="e.g. Got promoted last month" style="margin-bottom:16px"/>
-    <div id="req-err" style="color:var(--danger);font-size:13px;margin-bottom:8px;display:none"></div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="submitRequest(${empId})">Submit Request</button>
-  `;
-  document.getElementById('request-overlay').classList.add('open');
-
-  document.getElementById('req-field').addEventListener('change', () => {
-    const field = document.getElementById('req-field').value;
-    if (field && field !== 'area_ratings') {
-      const valMap = {
-        designation: e.designation,
-        years_of_exp: e.years_of_exp,
-        projects_completed: e.projects_completed,
-        graduation_deg: e.graduation_deg,
-      };
-      document.getElementById('req-old').value = valMap[field] ?? '';
-    }
-  });
-}
-
-function toggleReqField() {
-  const field = document.getElementById('req-field').value;
-  document.getElementById('req-single-field').style.display  = (field && field !== 'area_ratings') ? '' : 'none';
-  document.getElementById('req-ratings-field').style.display = (field === 'area_ratings') ? '' : 'none';
-}
-
-async function submitRequest(empId) {
-  const field   = document.getElementById('req-field').value;
-  const note    = document.getElementById('req-note').value;
-  const errEl   = document.getElementById('req-err');
-  errEl.style.display = 'none';
-
-  if (!field) { errEl.textContent='Please select a field.'; errEl.style.display='block'; return; }
-
-  let payload = { field_name: field, note };
-
-  if (field === 'area_ratings') {
-    const areas = [1,2,3,4,5];
-    payload.area_ratings = areas.map(id => ({
-      functional_area_id: id,
-      rating: parseFloat(document.getElementById(`req-area-${id}`).value)
-    }));
-    payload.old_value = 'Previous ratings';
-    payload.new_value = 'Updated ratings (see area_ratings)';
-  } else {
-    const oldVal = document.getElementById('req-old').value;
-    const newVal = document.getElementById('req-new').value.trim();
-    if (!newVal) { errEl.textContent='Please enter a new value.'; errEl.style.display='block'; return; }
-    payload.old_value = oldVal;
-    payload.new_value = newVal;
-  }
-
-  try {
-    await api('/api/requests', { method:'POST', body: JSON.stringify(payload) });
-    document.getElementById('request-overlay').classList.remove('open');
-    toast('✅ Request submitted! Waiting for Shivam\'s approval.', 'ok');
-  } catch(e) {
-    errEl.textContent = e.message; errEl.style.display='block';
-  }
-}
-
-async function loadApprovals() {
-  const el = document.getElementById('approvals-list');
-  if (!el) return;
-  el.innerHTML = '<p style="color:var(--muted)">Loading…</p>';
-  try {
-    const requests = await api('/api/requests');
-    const pending   = requests.filter(r => r.status === 'pending');
-    const reviewed  = requests.filter(r => r.status !== 'pending');
-
-    const badge = document.getElementById('approval-badge');
-    if (badge) {
-      badge.textContent = pending.length;
-      badge.style.display = pending.length > 0 ? '' : 'none';
-    }
-
-    if (requests.length === 0) {
-      el.innerHTML = '<p style="color:var(--muted);padding:32px;text-align:center">No requests yet.</p>';
-      return;
-    }
-
-    const renderReq = (r, showActions) => `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;border-left:4px solid ${r.status==='pending'?'#f59e0b':r.status==='approved'?'#22c55e':'#ef4444'}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div>
-            <strong style="font-size:15px">${r.emp_name}</strong>
-            <span style="font-size:12px;color:var(--muted);margin-left:8px">#${r.emp_id}</span>
-          </div>
-          <span style="font-size:12px;padding:3px 10px;border-radius:20px;font-weight:600;background:${r.status==='pending'?'rgba(245,158,11,.15)':r.status==='approved'?'rgba(34,197,94,.15)':'rgba(239,68,68,.15)'};color:${r.status==='pending'?'#d97706':r.status==='approved'?'#16a34a':'#dc2626'}">${r.status.toUpperCase()}</span>
-        </div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:6px">
-          <strong style="color:var(--text)">Field:</strong> ${r.field_name} &nbsp;|&nbsp;
-          <strong style="color:var(--text)">From:</strong> ${r.old_value || '—'} &nbsp;→&nbsp;
-          <strong style="color:var(--text)">${r.field_name === 'area_ratings' ? 'Updated ratings' : r.new_value}</strong>
-        </div>
-        ${r.note ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">📝 ${r.note}</div>` : ''}
-        ${r.reject_reason ? `<div style="font-size:12px;color:#ef4444;margin-bottom:8px">Rejected: ${r.reject_reason}</div>` : ''}
-        <div style="font-size:11px;color:var(--muted)">${new Date(r.requested_at).toLocaleString()}</div>
-        ${showActions ? `
-          <div style="display:flex;gap:8px;margin-top:12px">
-            <button class="btn btn-primary" style="flex:1;justify-content:center;font-size:13px" onclick="reviewRequest(${r.id},'approve')">✅ Approve</button>
-            <button class="btn btn-danger" style="flex:1;justify-content:center;font-size:13px" onclick="reviewRequest(${r.id},'reject')">❌ Reject</button>
-          </div>` : ''}
-      </div>`;
-
-    let html = '';
-    if (pending.length > 0) {
-      html += `<h3 style="font-size:15px;font-weight:700;margin-bottom:12px;color:var(--warn)">⏳ Pending (${pending.length})</h3>`;
-      html += pending.map(r => renderReq(r, true)).join('');
-    }
-    if (reviewed.length > 0) {
-      html += `<h3 style="font-size:15px;font-weight:700;margin:20px 0 12px;color:var(--muted)">📁 Reviewed (${reviewed.length})</h3>`;
-      html += reviewed.map(r => renderReq(r, false)).join('');
-    }
-    el.innerHTML = html;
-  } catch(e) {
-    el.innerHTML = `<p style="color:var(--danger)">Error: ${e.message}</p>`;
-  }
-}
-
-async function reviewRequest(id, action) {
-  let reject_reason = null;
-  if (action === 'reject') {
-    reject_reason = prompt('Reason for rejection (optional):') || '';
-  }
-  try {
-    await api(`/api/requests/${id}`, { method:'PATCH', body: JSON.stringify({action, reject_reason}) });
-    toast(action === 'approve' ? '✅ Approved!' : '❌ Rejected.', action === 'approve' ? 'ok' : 'warn');
-    loadApprovals();
-    loadEmployees();
-  } catch(e) {
-    toast('Error: ' + e.message, 'err');
-  }
-}
-
-async function loadMyRequests() {
-  const el = document.getElementById('myrequests-list');
-  if (!el) return;
-  el.innerHTML = '<p style="color:var(--muted)">Loading…</p>';
-  try {
-    const requests = await api('/api/requests/mine');
-    if (requests.length === 0) {
-      el.innerHTML = '<p style="color:var(--muted);padding:32px;text-align:center">You have no requests yet. Click "Request Update" on your profile card.</p>';
-      return;
-    }
-    el.innerHTML = requests.map(r => `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;border-left:4px solid ${r.status==='pending'?'#f59e0b':r.status==='approved'?'#22c55e':'#ef4444'}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <strong>${r.field_name}</strong>
-          <span style="font-size:12px;padding:3px 10px;border-radius:20px;font-weight:600;background:${r.status==='pending'?'rgba(245,158,11,.15)':r.status==='approved'?'rgba(34,197,94,.15)':'rgba(239,68,68,.15)'};color:${r.status==='pending'?'#d97706':r.status==='approved'?'#16a34a':'#dc2626'}">${r.status.toUpperCase()}</span>
-        </div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:4px">
-          ${r.old_value || '—'} → <strong style="color:var(--text)">${r.field_name==='area_ratings'?'Updated ratings':r.new_value}</strong>
-        </div>
-        ${r.note ? `<div style="font-size:12px;color:var(--muted);margin-bottom:4px">📝 ${r.note}</div>` : ''}
-        ${r.reject_reason ? `<div style="font-size:12px;color:#ef4444">Reason: ${r.reject_reason}</div>` : ''}
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">${new Date(r.requested_at).toLocaleString()}</div>
-      </div>`).join('');
-  } catch(e) {
-    el.innerHTML = `<p style="color:var(--danger)">Error: ${e.message}</p>`;
-  }
-}
-
-setInterval(async () => {
-  if (!isAdmin) return;
-  try {
-    const data = await api('/api/requests/count');
-    const badge = document.getElementById('approval-badge');
-    if (badge) {
-      badge.textContent = data.count;
-      badge.style.display = data.count > 0 ? '' : 'none';
-    }
-  } catch {}
-}, 60000);
-
-const _origRG = window.renderGrid;
-window.renderGrid = function() {
-  if (isEmployee && userInfo) {
-    renderGridWithRole();
-  } else {
-    _origRG ? _origRG() : renderGrid();
-  }
-};
 </script>
-
-<!-- Set Password Overlay (first login) -->
-<div id="setpw-overlay" class="overlay">
-  <div class="modal" style="max-width:380px">
-    <div class="modal-header"><span class="modal-title">🔐 Set Your Password</span></div>
-    <div style="padding:20px">
-      <p style="margin-bottom:16px;color:var(--muted)">Welcome, <strong id="setpw-name" style="color:var(--text)"></strong>! This is your first login. Please set a password.</p>
-      <label class="form-label">New Password</label>
-      <input class="form-input" id="setpw-pw" type="password" placeholder="At least 6 characters" style="margin-bottom:12px"/>
-      <label class="form-label">Confirm Password</label>
-      <input class="form-input" id="setpw-pw2" type="password" placeholder="Repeat password" onkeydown="if(event.key==='Enter')doSetPassword()"/>
-      <div id="setpw-err" style="color:var(--danger);font-size:13px;margin-top:8px;display:none"></div>
-      <button class="btn btn-primary" id="setpw-btn" style="width:100%;justify-content:center;margin-top:16px" onclick="doSetPassword()">Set Password</button>
-    </div>
-  </div>
-</div>
-
-<!-- Approvals View (Admin only) -->
-<div id="view-approvals" class="view view-section" style="display:none;padding:24px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-    <h2 style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700">✅ Approval Requests</h2>
-    <button class="btn btn-ghost" onclick="loadApprovals()">🔄 Refresh</button>
-  </div>
-  <div id="approvals-list"><p style="color:var(--muted)">Loading…</p></div>
-</div>
-
-<!-- My Requests View (Employee only) -->
-<div id="view-myrequests" class="view view-section" style="display:none;padding:24px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-    <h2 style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700">📋 My Requests</h2>
-    <button class="btn btn-ghost" onclick="loadMyRequests()">🔄 Refresh</button>
-  </div>
-  <div id="myrequests-list"><p style="color:var(--muted)">Loading…</p></div>
-</div>
-
 </body>
 </html>

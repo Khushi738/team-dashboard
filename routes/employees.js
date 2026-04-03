@@ -3,8 +3,8 @@ const router = express.Router();
 const pool = require('../config/db');
 const verifyToken = require('../middleware/auth');
 
-// All routes protected
-router.use(verifyToken);
+
+
 
 // GET /api/employees
 router.get('/', async (req, res) => {
@@ -80,7 +80,7 @@ router.get('/:emp_id', async (req, res) => {
 });
 
 // POST /api/employees
-router.post('/', async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
     const { emp_id, emp_name, designation, years_of_exp, graduation_deg, projects_completed, areas } = req.body;
 
     if (!emp_id || !emp_name || !designation || years_of_exp === undefined || !graduation_deg || projects_completed === undefined) {
@@ -122,7 +122,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/employees/:emp_id
-router.put('/:emp_id', async (req, res) => {
+router.put('/:emp_id', verifyToken, async (req, res) => {
     const { emp_id } = req.params;
     const { emp_name, designation, years_of_exp, graduation_deg, projects_completed, areas } = req.body;
 
@@ -170,7 +170,7 @@ router.put('/:emp_id', async (req, res) => {
 });
 
 // DELETE /api/employees/:emp_id
-router.delete('/:emp_id', async (req, res) => {
+router.delete('/:emp_id', verifyToken, async (req, res) => {
     const { emp_id } = req.params;
     try {
         const result = await pool.query(`DELETE FROM employees WHERE emp_id=$1 RETURNING emp_id`, [emp_id]);
