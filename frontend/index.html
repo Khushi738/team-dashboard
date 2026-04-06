@@ -483,7 +483,7 @@ body{font-family:'DM Sans',sans-serif;background:#eef2f7;color:var(--text);min-h
 // Change this to your backend URL. When backend & frontend are
 // on the same host (e.g. Railway), leave as empty string.
 const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-  ? 'http://localhost:5000'   // local backend port
+  ? 'http://localhost:3000'   // local backend port
   : '';                        // same origin in production
 
 // ── CONSTANTS ─────────────────────────────────────────────
@@ -525,8 +525,10 @@ async function init() {
   // restore session
   if (token) {
     try {
-      await api('/api/auth/verify');
-      setAdminUI(true);
+      const v = await api('/api/auth/verify');
+      const role = (v.user && v.user.role) ? v.user.role : 'admin';
+      if (role === 'admin') setAdminUI(true);
+      else logout(false);
     } catch { logout(false); }
   }
 
@@ -580,15 +582,15 @@ async function doLogin() {
       body: JSON.stringify({emp_id, password})
     });
     token = data.token;
-    adminInfo = data.admin;
+    adminInfo = { emp_id: data.emp_id, emp_name: data.emp_name };
     localStorage.setItem('td_token', token);
     localStorage.setItem('td_admin', JSON.stringify(adminInfo));
     setAdminUI(true);
     document.getElementById('login-overlay').classList.remove('open');
     document.getElementById('login-empid').value = '';
     document.getElementById('login-pw').value = '';
-    await loadEmployees(); // reload with admin controls
-    toast(`✅ Welcome, ${adminInfo.emp_name}!`, 'ok');
+    await loadEmployees();
+    toast(`✅ Welcome, ${data.emp_name}!`, 'ok');
   } catch(e) {
     err.textContent = e.message;
     err.style.display = 'block';
@@ -621,7 +623,7 @@ function avgScore(emp) {
 }
 
 function tier(score) {
-  return score >= 90 ? 'S' : score >= 75 ? 'A' : score >= 60 ? 'B' : 'C';
+  return score >= 95 ? 'S' : score >= 80 ? 'A' : score >= 60 ? 'B' : 'C';
 }
 
 function tierColor(t) { return {S:'#f59e0b',A:'#3b82f6',B:'#22c55e',C:'#94a3b8'}[t] || '#888'; }
@@ -651,7 +653,7 @@ function getFiltered() {
   if (filter.sort === 'name')     list.sort((a,b) => a.emp_name.localeCompare(b.emp_name));
   if (filter.sort === 'score')    list.sort((a,b) => b._score - a._score);
   if (filter.sort === 'projects') list.sort((a,b) => b.projects_completed - a.projects_completed);
-  if (filter.sort === 'exp')      list.sort((a,b) => b.years_of_exp - a.years_of_exp);
+  if (filter.sort === 'exp')      list.sort((a,b) => { if(a.years_of_exp===0 && b.years_of_exp>0) return 1; if(b.years_of_exp===0 && a.years_of_exp>0) return -1; return b.years_of_exp - a.years_of_exp; });
   return list;
 }
 
@@ -783,7 +785,7 @@ function renderOrg() {
     <div class="vline"></div>
     <div class="org-depts">
       ${areas.map(area => {
-        const members = employees.filter(e => e.areas?.some(a => a.area_name === area));
+        const members = employees.filter(e => e.areas?.some(a => a.area_name === area && parseFloat(a.rating) >= 5));
         return `
         <div class="dept-col">
           <div class="dept-vline"></div>
